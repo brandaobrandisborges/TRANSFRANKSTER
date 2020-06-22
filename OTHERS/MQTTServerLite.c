@@ -21,6 +21,8 @@
 //A subscricao com # define todos subtopicos do mesmo... Vai ser responsavel para armazenar os PEERS/FILES
 #define MQTT_PUBLISH_TOPIC_DISP "unifei/redes/FRANKSTEIN/HUB/AVALIABLE/#"
 #define MQTT_PUBLISH_TOPIC_REQ    "unifei/redes/FRANKSTEIN/HUB/REQUEST/#"
+//FILA PARA OS DE ARQUIVO DISPONIVEL OUVIREM
+#define MQTT_PUBLISH_TOPIC_REQ_RESP    "unifei/redes/FRANKSTEIN/HUB/REQ_RESP/"
 
 /*
 *  Variaveis globais
@@ -28,8 +30,8 @@
 MQTTClient client;
 
 //TABELA DE PEER/TABLE
-char **peer_table = NULL;
-char **file_table = NULL;
+char *peer_table[100];
+char *file_table[100];
 int table_count = 0;
 
 /*
@@ -82,40 +84,77 @@ int on_message(void *context, char *topicName, int topicLen, MQTTClient_message 
         ip = topicName+38;
         printf("Recebido disponibilidade de [%s] para [%s]\n", ip, payload);
         
-        if(peer_table == NULL){
-        //CRIA TABELA DE PEER
-        table_count++;
-        peer_table = malloc (table_count * sizeof(char*));
-        *(peer_table + table_count) = ip;
-        
+        if(table_count <= 99){
+            peer_table[table_count] = NULL;
+            peer_table[table_count] = malloc (100);
+            if(peer_table[table_count]==NULL){
+                printf("Falha no malloc. Returnando\n");
+                return 0;
+            }
 
-        //CRIA TABELA DE FILE
-        file_table = malloc (table_count * sizeof(char*));
-        *(file_table + table_count) = payload;
-               
-        printf("Criado... Vamos imprimir\n");
-        printf("| %s | ---- | %s |", *(file_table + table_count), *(peer_table + table_count));
+            file_table[table_count] = "";
+            file_table[table_count] = malloc (100);
+            if(file_table[table_count]==NULL){
+                printf("Falha no malloc. Returnando\n");
+                return 0;
+            }
 
-        }else{
-            //TABELA JA EXISTE, SIMPLESMENTE ADICIONA NOVO VALOR
+            //CRIA TABELA DE PEER
+            strcpy(peer_table[table_count], ip);
+            //CRIA TABELA DE FILE
+            strcpy(file_table[table_count], payload);
+            //file_table[table_count] = payload;
+
+            printf("Criado...\n");
+            printf("| %s | ---- | %s |", file_table[table_count], peer_table[table_count]);
             table_count++;
-            
-            peer_table = realloc (peer_table, table_count * sizeof(char*));
-            *(peer_table + table_count) = ip;
-
-            file_table = realloc (file_table, table_count * sizeof(char*));
-            *(file_table + table_count) = payload;
-
-            printf("Realocado... Vamos imprimir\n");
-            printf("| %s | ---- | %s |", *(file_table + table_count), *(peer_table + table_count));
+        }else{
+            printf("Server overload. Try latter\n");
+            return 0;
         }
     }else{
-        printf("Requisicao de arquivo\n");
+        char * ipx = NULL;
+        ipx = malloc (15);
+        if(ipx == NULL){
+            printf("Erro de memoria\n");
+            return 0;
+        }
+        
+        ipx = topicName+36;
+        printf("Requisicao de arquivo. Temos:\n");
 
         int k;
-        int len = strlen(*file_table);
         for (k = 0; k < table_count; k++){
-            printf("| %s | ---- | %s | --- %d", *(file_table + k), *(peer_table + k), len);
+            printf("| %s | ---- | %s |\n", file_table[k], peer_table[k]);
+            if(strcmp(file_table[k], payload)==0){
+                printf("Found match. Sending MQTT to start transaction. Wont stop to initiate more peers.\n");
+                char *topic_temp = NULL;
+                topic_temp = malloc (225);
+
+                if(topic_temp == NULL){
+                    printf("Falha ao alocar. Tente novamente\n");
+                    return 0;
+                }
+                //DEFINE SE EH REQUISITO OU DISPONIBILIZACAO
+                strcpy(topic_temp, MQTT_PUBLISH_TOPIC_REQ_RESP);
+                strcat(topic_temp, peer_table[k]);
+
+                char *pay_req = NULL;
+                pay_req = malloc (225);
+
+                if(pay_req == NULL){
+                    printf("Falha ao alocar. Tente novamente\n");
+                    return 0;
+                }
+                //DEFINE SE EH REQUISITO OU DISPONIBILIZACAO
+                strcpy(pay_req, file_table[k]);
+                strcat(pay_req, "|||");
+                strcat(pay_req, ipx);
+
+                printf("Requesting IP [%s] to send data [%s] to IP [%s] through topic [%s]. Pay load request is [%s]...", peer_table[k], file_table[k], ipx, topic_temp, pay_req);
+                publish(client, topic_temp, pay_req);
+            }
+
         }
     }
     
